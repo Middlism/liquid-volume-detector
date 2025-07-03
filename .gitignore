@@ -1,1 +1,3 @@
 node_modules
+model/data
+model/processed_data

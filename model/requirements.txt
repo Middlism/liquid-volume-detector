@@ -20,4 +20,5 @@ transformers>=4.30.0  # For vision transformers
 # Utils
 tqdm>=4.65.0
 pyyaml>=6.0
-pillow>=10.0.0
+Pillow>=10.0.0
+pytesseract>=0.3.10

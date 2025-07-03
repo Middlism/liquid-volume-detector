@@ -1,1 +1,0 @@
-# Inference module for liquid volume detection
