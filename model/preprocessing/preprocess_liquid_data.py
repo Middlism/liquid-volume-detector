@@ -22,31 +22,71 @@ class VideoProcessor:
         self.segments = Segments()
         self.scale_region = [548, 658, 669, 720] # [x1,x2,y1,y2] for scale region dataset 1-20
         self.scale_region_2 = [575, 685, 650,701] # [x1,x2,y1,y2] for scale region dataset after 20 (21-45)
-        self.segments_region = [
-            [[50,57,10,13],[44,47,13,26],[56,59,13,26],[48,55,27,30],[44,47,31,44],[56,59,30,43],[48,56,44,47]], # first digit
-            [[67,74,10,14],[64,67,12,26],[74,78,12,27],[66,74,27,13],[63,68,31,46],[72,76,31,46],[66,74,44,47]], # second digit
-            [[83,94,11,14],[81,85,13,27],[91,95,14,27],[83,91,28,31],[79,83,31,46],[90,94,31,45],[81,90,45,47]] # third digit
+        
+    def detect_weight(self, edges):
+        # Load digit templates (0-9)
+        templates = []
+        template_path = Path('preprocessing/templates')
+        
+        for digit in range(10):
+            template_file = template_path / f'template_{digit}.png'
+            if template_file.exists():
+                template = cv2.imread(str(template_file), cv2.IMREAD_GRAYSCALE)
+                if template is not None:
+                    # Resize template to 17x39 if needed
+                    template = cv2.resize(template, (17, 39))
+                    templates.append(template)
+                else:
+                    templates.append(None)
+            else:
+                templates.append(None)
+        
+        # Define digit regions (x1, x2, y1, y2)
+        digit_regions = [
+            (40, 60, 7, 49),  # First digit
+            (60, 79, 7, 49),  # Second digit  
+            (79, 96, 7, 49)   # Third digit
         ]
-
-        # 7-segment layout indices:
-        #   _0_
-        # 1|   |2
-        #   _3_
-        # 4|   |5
-        #   _6_
-        # Mapping of segment bit patterns to digit values
-        self.seg_digits = {
-            '1111011': 0,
-            '0010010': 1,
-            '1011101': 2,
-            '1011011': 3,
-            '0111010': 4,
-            '1101011': 5,
-            '1101111': 6,
-            '1010010': 7,
-            '1111111': 8,
-            '1111011': 9
-        }
+        
+        detected_digits = []
+        digit_started = False
+        
+        # Process each digit position
+        for x1, x2, y1, y2 in digit_regions:
+            # Extract digit region
+            digit_region = edges[y1:y2, x1:x2]
+            
+            # Find best matching digit
+            best_score = -1
+            best_digit = None
+            
+            for digit, template in enumerate(templates):
+                if template is None:
+                    continue
+                    
+                # Perform template matching
+                result = cv2.matchTemplate(digit_region, template, cv2.TM_CCOEFF_NORMED)
+                score = result.max()
+                
+                if score > best_score:
+                    best_score = score
+                    best_digit = digit
+            
+            # Threshold for valid detection
+            if best_score > 0.5:  # Adjust threshold as needed
+                detected_digits.append(str(best_digit))
+                digit_started = True
+            else:
+                # If we've started detecting digits and encounter None, stop
+                if digit_started:
+                    break
+        
+        # Convert digits to weight value
+        if detected_digits:  # If at least one digit was detected
+            weight = int(''.join(detected_digits))
+            return weight
+        
+        return None
 
     def process_folder(self, input_dir, output_dir, frame_interval=3):
         input_path = Path(input_dir)
@@ -97,7 +137,7 @@ class VideoProcessor:
                         flat = cv2.divide(enhanced, background, scale=255)
                         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
                         clahe_enhanced = clahe.apply(flat)
-                        # pre_thresh = cv2.GaussianBlur(clahe_enhanced, (5, 5), 0)
+                        pre_thresh = cv2.GaussianBlur(clahe_enhanced, (5, 5), 0)
 
                         threshold_value, edges = cv2.threshold(clahe_enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
@@ -122,7 +162,7 @@ class VideoProcessor:
                         plt.savefig(str(folder_output / hist_filename), dpi=100, bbox_inches='tight')
                         plt.close()
 
-                        weight = 0
+                        weight = self.detect_weight(edges)
 
                         if weight is not None:
                             weights.append(weight)
@@ -169,7 +209,6 @@ class VideoProcessor:
                 plt.close()
                 
         logger.info(f"\nProcessing complete. Output saved to: {output_path}")
-
 
 def main():
     parser = argparse.ArgumentParser()
