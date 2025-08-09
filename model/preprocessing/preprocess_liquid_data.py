@@ -23,7 +23,7 @@ class VideoProcessor:
         self.scale_region = [548, 658, 669, 720] # [x1,x2,y1,y2] for scale region dataset 1-20
         self.scale_region_2 = [575, 685, 650,701] # [x1,x2,y1,y2] for scale region dataset after 20 (21-45)
         
-    def detect_weight(self, edges):
+    def detect_weight(self, edges, first_part):
         # Load digit templates (0-9)
         templates = []
         template_path = Path('preprocessing/templates')
@@ -42,17 +42,23 @@ class VideoProcessor:
                 templates.append(None)
         
         # Define digit regions (x1, x2, y1, y2)
-        digit_regions = [
-            (40, 60, 7, 49),  # First digit
-            (60, 79, 7, 49),  # Second digit  
-            (79, 96, 7, 49)   # Third digit
+        digit_regions_1 = [
+            (45, 62, 8, 48),  # First digit
+            (62, 79, 8, 48),  # Second digit  
+            (79, 98, 8, 48)   # Third digit
+        ]
+
+        digit_regions_2 = [
+            (38, 57, 9, 50),
+            (57, 75, 9, 50),
+            (75, 93, 9, 50)
         ]
         
         detected_digits = []
         digit_started = False
         
         # Process each digit position
-        for x1, x2, y1, y2 in digit_regions:
+        for x1, x2, y1, y2 in digit_regions_1 if first_part else digit_regions_2:
             # Extract digit region
             digit_region = edges[y1:y2, x1:x2]
             
@@ -110,6 +116,7 @@ class VideoProcessor:
             
             cap = cv2.VideoCapture(str(video_path))
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps = cap.get(cv2.CAP_PROP_FPS)  # Get FPS for time calculation
             
             frame_count = 0
             weights = []
@@ -162,7 +169,9 @@ class VideoProcessor:
                         plt.savefig(str(folder_output / hist_filename), dpi=100, bbox_inches='tight')
                         plt.close()
 
-                        weight = self.detect_weight(edges)
+                        # Correct the call by passing the first_part parameter
+                        first_part = int(folder.name.split('-')[0]) <= 20
+                        weight = self.detect_weight(edges, first_part)
 
                         if weight is not None:
                             weights.append(weight)
@@ -193,14 +202,16 @@ class VideoProcessor:
             
             if weight_timeline:
                 frames, weights_values = zip(*weight_timeline)
+                times = [frame / fps for frame in frames]  # Convert frames to time in seconds
+                
                 plt.figure(figsize=(12, 6))
-                plt.scatter(frames, weights_values, alpha=0.6, s=20)
+                plt.scatter(times, weights_values, alpha=0.6, s=20)
                 
-                z = np.polyfit(frames, weights_values, 1)
+                z = np.polyfit(times, weights_values, 1)
                 p = np.poly1d(z)
-                plt.plot(frames, p(frames), "r-", alpha=0.8, label=f'Linear fit: y={z[0]:.4f}x+{z[1]:.2f}')
+                plt.plot(times, p(times), "r-", alpha=0.8, label=f'Linear fit: y={z[0]:.4f}x+{z[1]:.2f}')
                 
-                plt.xlabel('Frame Number')
+                plt.xlabel('Time (seconds)')
                 plt.ylabel('Weight (g)')
                 plt.title(f'Weight Detection - {folder.name}')
                 plt.legend()
